@@ -38,3 +38,4 @@ npm run dev
 
 - [Backend](backend/README.md) — dependencies, run, tests, environment, API surface.
 - [Frontend](frontend/README.md) — dependencies, dev server, lint, formatting, environment.
+- [Architecture Flow](docs/architecture-flow.md) — local frontend/backend request flow diagram.
