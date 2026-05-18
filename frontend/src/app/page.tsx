@@ -19,6 +19,8 @@ import {
   FieldError,
   FieldLabel,
 } from '@/components/ui/field';
+import { ensureSelfProfile, selfProfileFromList } from '@/lib/api';
+import { accountNameFromUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -29,7 +31,10 @@ type AuthFormValues = {
 };
 
 export default function HomePage() {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [accountName, setAccountName] = useState<string | null>(null);
+  const [profileDisplayName, setProfileDisplayName] = useState<string | null>(
+    null,
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -44,22 +49,53 @@ export default function HomePage() {
     },
   });
 
+  const loadSignedInState = async (
+    session: NonNullable<
+      Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']
+    >,
+  ) => {
+    setAccountName(accountNameFromUser(session.user));
+    try {
+      const profiles = await ensureSelfProfile(session);
+      const selfProfile = selfProfileFromList(profiles);
+      setProfileDisplayName(selfProfile?.display_name ?? null);
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : 'Could not load profile.';
+      setMessage(detail);
+      setProfileDisplayName(null);
+    }
+  };
+
+  const clearSignedInState = () => {
+    setAccountName(null);
+    setProfileDisplayName(null);
+  };
+
   useEffect(() => {
     const loadUser = async () => {
-      const { data, error } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getSession();
       if (error) {
         setMessage(error.message);
         return;
       }
-      setUserEmail(data.user?.email ?? null);
+      if (data.session?.user) {
+        await loadSignedInState(data.session);
+      } else {
+        clearSignedInState();
+      }
     };
 
-    loadUser();
+    void loadUser();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email ?? null);
+      if (session?.user) {
+        void loadSignedInState(session);
+      } else {
+        clearSignedInState();
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -69,7 +105,7 @@ export default function HomePage() {
     setLoading(true);
     setMessage(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: values.email,
       password: values.password,
     });
@@ -78,6 +114,10 @@ export default function HomePage() {
       setMessage(error.message);
       setLoading(false);
       return;
+    }
+
+    if (data.session) {
+      await loadSignedInState(data.session);
     }
 
     setMessage('Log in successful.');
@@ -96,28 +136,39 @@ export default function HomePage() {
 
   return (
     <div className="p-10">
-      <div className="mb-4 text-2xl font-bold">HealthHistorian</div>
+      <header className="mb-4 flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold">HealthHistorian</h1>
+        {accountName ? (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">
+              {accountName}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSignOut}
+              disabled={loading}
+            >
+              Log out
+            </Button>
+          </div>
+        ) : null}
+      </header>
+
       <div className="flex flex-col gap-4">
-        {userEmail ? (
+        {accountName ? (
           <Card>
             <CardHeader>
-              <CardTitle>HealthHistorian</CardTitle>
-              <CardDescription>Session controls</CardDescription>
+              <CardTitle>Profiles</CardTitle>
             </CardHeader>
-            <CardContent className="flex items-center justify-between gap-3">
-              <p>Signed in as: {userEmail}</p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleSignOut}
-                disabled={loading}
-              >
-                Log out
-              </Button>
+            <CardContent>
+              <p className="text-lg font-medium">
+                {profileDisplayName ?? '—'}
+              </p>
             </CardContent>
           </Card>
         ) : null}
-        {!userEmail ? (
+        {!accountName ? (
           <Card>
             <CardHeader>
               <CardTitle>Log in</CardTitle>

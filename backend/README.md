@@ -79,7 +79,7 @@ First migration: `8699142ccba4_create_users_and_profiles.py` creates `public.use
   - `SUPABASE_JWKS_URL` — from your project: `https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`
   - `SUPABASE_JWT_ISSUER` — must match the JWT `iss` claim: `https://<project-ref>.supabase.co/auth/v1` (no trailing slash after `v1` is typical; if verification fails, compare `iss` from a decoded token in [jwt.io](https://jwt.io) and align exactly).
 
-`pydantic-settings` loads `.env` for Alembic and DB code. JWT verification in [`app/auth.py`](app/auth.py) still reads `SUPABASE_*` from the process environment for now — export vars in your shell before `uvicorn`, or rely on your IDE injecting `.env`. (Optional later: unify auth on `settings` and/or add `python-dotenv` at app startup.)
+All backend configuration (database, CORS, JWT verification) loads from `backend/.env` via [`app/core/config.py`](app/core/config.py) and [`settings`](app/core/config.py). Copy [`.env.example`](.env.example) to `.env` and set `DATABASE_URL`, `SUPABASE_JWKS_URL`, and `SUPABASE_JWT_ISSUER` before running `uvicorn` or Alembic.
 
 ## API (current)
 
@@ -87,6 +87,10 @@ First migration: `8699142ccba4_create_users_and_profiles.py` creates `public.use
 |--------|------|-------------|
 | GET | `/health` | Process liveness (`{"status":"ok"}`). Operational check, not clinical data. |
 | GET | `/me` | Returns `sub` and `email` from a valid Supabase access token. Requires header `Authorization: Bearer <access_token>`. Returns `401` if missing/invalid/expired. |
+| GET | `/profiles` | Lists profiles owned by the signed-in app user. Returns `200` + JSON array; `401` without a valid token. Creates `public.users` on first call if missing. |
+| POST | `/profiles` | Creates a profile owned by the signed-in app user. Body: `display_name`, `relationship`, optional `dob` (ISO date). Returns `201` + profile JSON; `401` without a valid token; `422` on validation errors. `owner_user_id` is set server-side from the JWT — never send it in the body. |
+
+CORS allows the frontend origin (`FRONTEND_ORIGIN`, default `http://localhost:3000`) so the Next.js app can call the API from the browser with `NEXT_PUBLIC_API_URL`.
 
 ### Manual check for `/me`
 
@@ -100,3 +104,18 @@ curl -sS -H "Authorization: Bearer YOUR_ACCESS_TOKEN_HERE" http://127.0.0.1:8000
 Expect JSON like `{"sub":"<uuid>","email":"you@example.com"}`.
 
 OpenAPI docs (when server is running): `http://127.0.0.1:8000/docs` — open **GET /me**, click **Authorize**, enter only the JWT (no `Bearer ` prefix), then **Execute**.
+
+### Manual check for `POST /profiles`
+
+1. Sign up or log in via the Next.js app so `auth.users` has `user_metadata.first_name` / `last_name` (or use any display name for a family profile later).
+2. Copy a short-lived access token (dev only: `session.access_token` from Supabase after login).
+3. With the API running, `.env` set, and migrations applied:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/profiles \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{"display_name":"Jane Doe","relationship":"self"}'
+```
+
+Expect `201` with JSON including `id`, `display_name`, `relationship`, `dob`, `created_at`. Inspect `public.users` (row for your `auth_user_id`) and `public.profiles` (`owner_user_id` matches that user, `relationship` = `self`).

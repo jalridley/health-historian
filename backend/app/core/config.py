@@ -10,8 +10,10 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
 
-    SUPABASE_JWKS_URL: str = ""
-    SUPABASE_JWT_ISSUER: str = ""
+    FRONTEND_ORIGIN: str = "http://localhost:3000"
+
+    SUPABASE_JWKS_URL: str
+    SUPABASE_JWT_ISSUER: str
 
 
 settings = Settings()

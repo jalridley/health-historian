@@ -20,11 +20,14 @@ import {
   FieldError,
   FieldLabel,
 } from '@/components/ui/field';
+import { ensureSelfProfile } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type SignUpFormValues = {
+  firstName: string;
+  lastName: string;
   email: string;
   password: string;
   confirmPassword: string;
@@ -44,6 +47,8 @@ export default function CreateAccountPage() {
     formState: { errors },
   } = useForm<SignUpFormValues>({
     defaultValues: {
+      firstName: '',
+      lastName: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -64,9 +69,15 @@ export default function CreateAccountPage() {
     setLoading(true);
     setMessage(null);
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: values.email,
       password: values.password,
+      options: {
+        data: {
+          first_name: values.firstName.trim(),
+          last_name: values.lastName.trim(),
+        },
+      },
     });
 
     if (error) {
@@ -75,8 +86,27 @@ export default function CreateAccountPage() {
       return;
     }
 
-    await supabase.auth.signOut();
-    setMessage('Account created successfully. Redirecting to log in...');
+    if (data.session) {
+      try {
+        await ensureSelfProfile(data.session);
+      } catch (bootstrapError) {
+        const detail =
+          bootstrapError instanceof Error
+            ? bootstrapError.message
+            : 'Could not create your profile.';
+        setMessage(detail);
+        setLoading(false);
+        return;
+      }
+      setMessage('Account created. Redirecting…');
+      setLoading(false);
+      router.push('/');
+      return;
+    }
+
+    setMessage(
+      'Account created. Check your email to confirm, then log in to finish setup.',
+    );
     setLoading(false);
     router.push('/');
   };
@@ -87,7 +117,7 @@ export default function CreateAccountPage() {
         <CardHeader>
           <CardTitle>Create account</CardTitle>
           <CardDescription>
-            Use your email and a password to create an account.
+            Use your name, email, and a password to create an account.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -96,6 +126,44 @@ export default function CreateAccountPage() {
             onSubmit={handleSubmit(handleSignUp)}
             noValidate
           >
+            <Field data-invalid={!!errors.firstName}>
+              <FieldLabel>First name</FieldLabel>
+              <FieldContent>
+                <Input
+                  placeholder="First name"
+                  autoComplete="given-name"
+                  {...register('firstName', {
+                    required: 'First name is required.',
+                    maxLength: {
+                      value: 64,
+                      message: 'First name is too long.',
+                    },
+                  })}
+                  aria-invalid={!!errors.firstName}
+                />
+              </FieldContent>
+              <FieldError errors={[errors.firstName]} />
+            </Field>
+
+            <Field data-invalid={!!errors.lastName}>
+              <FieldLabel>Last name</FieldLabel>
+              <FieldContent>
+                <Input
+                  placeholder="Last name"
+                  autoComplete="family-name"
+                  {...register('lastName', {
+                    required: 'Last name is required.',
+                    maxLength: {
+                      value: 64,
+                      message: 'Last name is too long.',
+                    },
+                  })}
+                  aria-invalid={!!errors.lastName}
+                />
+              </FieldContent>
+              <FieldError errors={[errors.lastName]} />
+            </Field>
+
             <Field data-invalid={!!errors.email}>
               <FieldLabel>Email</FieldLabel>
               <FieldContent>

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, SQLModel
 
 
 def _utc_now() -> datetime:
@@ -24,9 +24,4 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=_utc_now,
         sa_type=DateTime(timezone=True),  # type: ignore[arg-type]
-    )
-
-    profiles: list["Profile"] = Relationship(
-        back_populates="owner",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )

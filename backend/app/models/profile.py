@@ -1,14 +1,10 @@
 import uuid
 from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING
 
 from sqlalchemy import Column, DateTime, String
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, SQLModel
 
 from app.models.user import _utc_now
-
-if TYPE_CHECKING:
-    from app.models.user import User
 
 
 class Profile(SQLModel, table=True):
@@ -24,5 +20,3 @@ class Profile(SQLModel, table=True):
         default_factory=_utc_now,
         sa_type=DateTime(timezone=True),  # type: ignore[arg-type]
     )
-
-    owner: "User | None" = Relationship(back_populates="profiles")

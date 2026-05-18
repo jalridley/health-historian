@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -7,6 +6,8 @@ from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWKClientConnectionError, PyJWTError
+
+from app.core.config import settings
 
 security = HTTPBearer(auto_error=False)
 
@@ -20,23 +21,11 @@ class CurrentUser:
 
 
 def _jwks_url() -> str:
-    url = os.environ.get("SUPABASE_JWKS_URL")
-    if not url:
-        raise RuntimeError(
-            "SUPABASE_JWKS_URL is not set. Example: "
-            "https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json"
-        )
-    return url
+    return settings.SUPABASE_JWKS_URL
 
 
 def _issuer() -> str:
-    issuer = os.environ.get("SUPABASE_JWT_ISSUER")
-    if not issuer:
-        raise RuntimeError(
-            "SUPABASE_JWT_ISSUER is not set. Example: "
-            "https://<project-ref>.supabase.co/auth/v1"
-        )
-    return issuer.rstrip("/")
+    return settings.SUPABASE_JWT_ISSUER.rstrip("/")
 
 
 def _get_jwk_client() -> PyJWKClient:
