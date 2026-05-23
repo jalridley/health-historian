@@ -88,7 +88,8 @@ All backend configuration (database, CORS, JWT verification) loads from `backend
 | GET | `/health` | Process liveness (`{"status":"ok"}`). Operational check, not clinical data. |
 | GET | `/me` | Returns `sub` and `email` from a valid Supabase access token. Requires header `Authorization: Bearer <access_token>`. Returns `401` if missing/invalid/expired. |
 | GET | `/profiles` | Lists profiles owned by the signed-in app user. Returns `200` + JSON array; `401` without a valid token. Creates `public.users` on first call if missing. |
-| POST | `/profiles` | Creates a profile owned by the signed-in app user. Body: `display_name`, `relationship`, optional `dob` (ISO date). Returns `201` + profile JSON; `401` without a valid token; `422` on validation errors. `owner_user_id` is set server-side from the JWT — never send it in the body. |
+| POST | `/profiles` | Creates a profile owned by the signed-in app user. Body: `display_name`, optional `is_self` (default `false`; only one self profile per user), optional `dob` (ISO date). Returns `201` + profile JSON; `401` without a valid token; `409` if a second self profile is requested; `422` on validation errors. `owner_user_id` is set server-side from the JWT — never send it in the body. |
+| DELETE | `/profiles/{profile_id}` | Deletes an owned non-self profile. Returns `204`; `403` if `is_self`; `404` if not found or not owned; `401` without a valid token. |
 
 CORS allows the frontend origin (`FRONTEND_ORIGIN`, default `http://localhost:3000`) so the Next.js app can call the API from the browser with `NEXT_PUBLIC_API_URL`.
 
@@ -115,7 +116,7 @@ OpenAPI docs (when server is running): `http://127.0.0.1:8000/docs` — open **G
 curl -sS -X POST http://127.0.0.1:8000/profiles \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN_HERE" \
   -H "Content-Type: application/json" \
-  -d '{"display_name":"Jane Doe","relationship":"self"}'
+  -d '{"display_name":"Jane Doe","is_self":true}'
 ```
 
-Expect `201` with JSON including `id`, `display_name`, `relationship`, `dob`, `created_at`. Inspect `public.users` (row for your `auth_user_id`) and `public.profiles` (`owner_user_id` matches that user, `relationship` = `self`).
+Expect `201` with JSON including `id`, `display_name`, `is_self`, `dob`, `created_at`. Inspect `public.users` (row for your `auth_user_id`) and `public.profiles` (`owner_user_id` matches that user, `is_self` = `true` for your account profile).

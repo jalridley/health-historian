@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SubmitHandler } from 'react-hook-form';
 import { useForm, useWatch } from 'react-hook-form';
 import Link from 'next/link';
@@ -20,7 +20,11 @@ import {
   FieldError,
   FieldLabel,
 } from '@/components/ui/field';
-import { ensureSelfProfile } from '@/lib/api';
+import { clearStoredProfileSelection, ensureSelfProfile } from '@/lib/api';
+import {
+  DUPLICATE_SIGNUP_MESSAGE,
+  isDuplicateSignup,
+} from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -65,13 +69,24 @@ export default function CreateAccountPage() {
     defaultValue: '',
   });
 
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        router.replace('/');
+      }
+    });
+  }, [router]);
+
   const handleSignUp: SubmitHandler<SignUpFormValues> = async (values) => {
     setLoading(true);
     setMessage(null);
 
+    const email = values.email.trim();
+    const password = values.password;
+
     const { data, error } = await supabase.auth.signUp({
-      email: values.email,
-      password: values.password,
+      email,
+      password,
       options: {
         data: {
           first_name: values.firstName.trim(),
@@ -80,35 +95,52 @@ export default function CreateAccountPage() {
       },
     });
 
+    if (isDuplicateSignup(error, data.user, data.session)) {
+      setMessage(DUPLICATE_SIGNUP_MESSAGE);
+      setLoading(false);
+      return;
+    }
+
     if (error) {
       setMessage(error.message);
       setLoading(false);
       return;
     }
 
-    if (data.session) {
-      try {
-        await ensureSelfProfile(data.session);
-      } catch (bootstrapError) {
-        const detail =
-          bootstrapError instanceof Error
-            ? bootstrapError.message
-            : 'Could not create your profile.';
-        setMessage(detail);
+    let session = data.session;
+    if (!session) {
+      const signIn = await supabase.auth.signInWithPassword({ email, password });
+      if (signIn.error) {
+        setMessage(
+          'Account created. Check your email to confirm, then log in.',
+        );
         setLoading(false);
         return;
       }
-      setMessage('Account created. Redirecting…');
+      session = signIn.data.session;
+    }
+
+    if (!session) {
+      setMessage('Account created. Check your email to confirm, then log in.');
       setLoading(false);
-      router.push('/');
       return;
     }
 
-    setMessage(
-      'Account created. Check your email to confirm, then log in to finish setup.',
-    );
-    setLoading(false);
-    router.push('/');
+    clearStoredProfileSelection();
+
+    try {
+      await ensureSelfProfile(session);
+    } catch (bootstrapError) {
+      const detail =
+        bootstrapError instanceof Error
+          ? bootstrapError.message
+          : 'Could not create your profile.';
+      setMessage(detail);
+      setLoading(false);
+      return;
+    }
+
+    router.replace('/');
   };
 
   return (

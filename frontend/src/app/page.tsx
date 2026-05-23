@@ -19,7 +19,8 @@ import {
   FieldError,
   FieldLabel,
 } from '@/components/ui/field';
-import { ensureSelfProfile, selfProfileFromList } from '@/lib/api';
+import { ProfilesPanel } from '@/components/profiles-panel';
+import { clearStoredProfileSelection } from '@/lib/api';
 import { accountNameFromUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
@@ -32,9 +33,6 @@ type AuthFormValues = {
 
 export default function HomePage() {
   const [accountName, setAccountName] = useState<string | null>(null);
-  const [profileDisplayName, setProfileDisplayName] = useState<string | null>(
-    null,
-  );
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -55,25 +53,14 @@ export default function HomePage() {
     >,
   ) => {
     setAccountName(accountNameFromUser(session.user));
-    try {
-      const profiles = await ensureSelfProfile(session);
-      const selfProfile = selfProfileFromList(profiles);
-      setProfileDisplayName(selfProfile?.display_name ?? null);
-    } catch (error) {
-      const detail =
-        error instanceof Error ? error.message : 'Could not load profile.';
-      setMessage(detail);
-      setProfileDisplayName(null);
-    }
   };
 
   const clearSignedInState = () => {
     setAccountName(null);
-    setProfileDisplayName(null);
   };
 
   useEffect(() => {
-    const loadUser = async () => {
+    const init = async () => {
       const { data, error } = await supabase.auth.getSession();
       if (error) {
         setMessage(error.message);
@@ -86,7 +73,7 @@ export default function HomePage() {
       }
     };
 
-    void loadUser();
+    void init();
 
     const {
       data: { subscription },
@@ -94,6 +81,7 @@ export default function HomePage() {
       if (session?.user) {
         void loadSignedInState(session);
       } else {
+        clearStoredProfileSelection();
         clearSignedInState();
       }
     });
@@ -106,7 +94,7 @@ export default function HomePage() {
     setMessage(null);
 
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: values.email,
+      email: values.email.trim(),
       password: values.password,
     });
 
@@ -129,6 +117,8 @@ export default function HomePage() {
     setMessage(null);
 
     const { error } = await supabase.auth.signOut();
+    clearStoredProfileSelection();
+    clearSignedInState();
 
     setMessage(error ? error.message : 'Log out successful.');
     setLoading(false);
@@ -157,16 +147,14 @@ export default function HomePage() {
 
       <div className="flex flex-col gap-4">
         {accountName ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Profiles</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-lg font-medium">
-                {profileDisplayName ?? '—'}
+          <>
+            <ProfilesPanel onError={(detail) => setMessage(detail)} />
+            {message ? (
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                {message}
               </p>
-            </CardContent>
-          </Card>
+            ) : null}
+          </>
         ) : null}
         {!accountName ? (
           <Card>
@@ -212,8 +200,8 @@ export default function HomePage() {
                         {...register('password', {
                           required: 'Password is required.',
                           minLength: {
-                            value: 6,
-                            message: 'Password must be at least 6 characters.',
+                            value: 8,
+                            message: 'Password must be at least 8 characters.',
                           },
                         })}
                         aria-invalid={!!errors.password}
