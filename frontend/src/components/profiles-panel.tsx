@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SubmitHandler } from 'react-hook-form';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
@@ -151,6 +151,24 @@ export function ProfilesPanel({ onError }: ProfilesPanelProps) {
     void loadProfiles();
   }, [loadProfiles]);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const addDocProfileRef = useRef<string | null>(null);
+
+  const handleAddDocuments = (profileId: string) => {
+    addDocProfileRef.current = profileId;
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      return;
+    }
+    // TODO: upload to GCS once storage is configured (Milestone 3)
+    addDocProfileRef.current = null;
+    e.target.value = '';
+  };
+
   const displayProfiles = sortProfilesForDisplay(profiles);
 
   const selectProfile = (profile: ProfilePublic) => {
@@ -242,6 +260,14 @@ export function ProfilesPanel({ onError }: ProfilesPanelProps) {
 
   return (
     <Card>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept="application/pdf"
+        multiple
+        onChange={handleFilesSelected}
+      />
       <CardHeader>
         <CardTitle>Profiles</CardTitle>
         <CardDescription>
@@ -299,6 +325,14 @@ export function ProfilesPanel({ onError }: ProfilesPanelProps) {
                     >
                       {profile.display_name}
                     </button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      onClick={() => handleAddDocuments(profile.id)}
+                    >
+                      Add document(s)
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
