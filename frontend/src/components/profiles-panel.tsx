@@ -56,14 +56,17 @@ type ProfilesPanelProps = {
   onError?: (message: string) => void;
 };
 
-function profileButtonClass(profileId: string, selectedProfileId: string | null) {
+const profileButtonClass = (
+  profileId: string,
+  selectedProfileId: string | null,
+) => {
   const selected = selectedProfileId === profileId;
   return selected
     ? 'w-full rounded-md border border-zinc-900 bg-zinc-100 px-3 py-2 text-left text-sm font-medium dark:border-zinc-100 dark:bg-zinc-800'
     : 'w-full rounded-md border border-transparent px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800';
-}
+};
 
-function formatBytes(bytes: number): string {
+const formatBytes = (bytes: number): string => {
   if (bytes < 1024) {
     return `${bytes} B`;
   }
@@ -72,9 +75,9 @@ function formatBytes(bytes: number): string {
     return `${kb.toFixed(1)} KB`;
   }
   return `${(kb / 1024).toFixed(1)} MB`;
-}
+};
 
-export function ProfilesPanel({ onError }: ProfilesPanelProps) {
+export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
   const [profiles, setProfiles] = useState<ProfilePublic[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     null,
@@ -510,4 +513,4 @@ export function ProfilesPanel({ onError }: ProfilesPanelProps) {
       </CardContent>
     </Card>
   );
-}
+};
