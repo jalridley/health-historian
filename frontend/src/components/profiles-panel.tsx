@@ -22,12 +22,15 @@ import {
   createProfile,
   deleteProfile,
   ensureSelfProfile,
+  listDocuments,
   listProfiles,
   readStoredSelectedProfileId,
   resolveSelectedProfile,
   sortProfilesForDisplay,
   updateProfile,
+  uploadProfileDocument,
   writeStoredSelectedProfileId,
+  type DocumentPublic,
   type ProfilePublic,
 } from '@/lib/api';
 import { requireAccessToken } from '@/lib/auth';
@@ -60,6 +63,17 @@ function profileButtonClass(profileId: string, selectedProfileId: string | null)
     : 'w-full rounded-md border border-transparent px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800';
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const kb = bytes / 1024;
+  if (kb < 1024) {
+    return `${kb.toFixed(1)} KB`;
+  }
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
 export function ProfilesPanel({ onError }: ProfilesPanelProps) {
   const [profiles, setProfiles] = useState<ProfilePublic[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
@@ -71,6 +85,11 @@ export function ProfilesPanel({ onError }: ProfilesPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [documents, setDocuments] = useState<DocumentPublic[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [uploadingProfileId, setUploadingProfileId] = useState<string | null>(
+    null,
+  );
   const {
     register,
     handleSubmit,
@@ -155,21 +174,57 @@ export function ProfilesPanel({ onError }: ProfilesPanelProps) {
   const addDocProfileRef = useRef<string | null>(null);
 
   const handleAddDocuments = (profileId: string) => {
+    setSelectedProfileId(profileId);
+    writeStoredSelectedProfileId(profileId);
     addDocProfileRef.current = profileId;
     fileInputRef.current?.click();
   };
 
-  const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) {
+    const profileId = addDocProfileRef.current;
+    if (!files || files.length === 0 || !profileId) {
       return;
     }
-    // TODO: upload to GCS once storage is configured (Milestone 3)
-    addDocProfileRef.current = null;
-    e.target.value = '';
+    setUploadingProfileId(profileId);
+    try {
+      const accessToken = await requireAccessToken();
+      for (const file of Array.from(files)) {
+        await uploadProfileDocument(accessToken, profileId, file);
+      }
+      const docs = await listDocuments(accessToken, profileId);
+      setDocuments(docs);
+    } catch (err) {
+      reportError(err, 'Could not upload document(s).');
+    } finally {
+      setUploadingProfileId(null);
+      addDocProfileRef.current = null;
+      e.target.value = '';
+    }
   };
 
   const displayProfiles = sortProfilesForDisplay(profiles);
+
+  useEffect(() => {
+    const loadDocumentsForSelected = async () => {
+      if (!selectedProfileId) {
+        setDocuments([]);
+        return;
+      }
+      setDocumentsLoading(true);
+      try {
+        const accessToken = await requireAccessToken();
+        const docs = await listDocuments(accessToken, selectedProfileId);
+        setDocuments(docs);
+      } catch (err) {
+        reportError(err, 'Could not load documents.');
+        setDocuments([]);
+      } finally {
+        setDocumentsLoading(false);
+      }
+    };
+    void loadDocumentsForSelected();
+  }, [reportError, selectedProfileId]);
 
   const selectProfile = (profile: ProfilePublic) => {
     setSelectedProfileId(profile.id);
@@ -329,9 +384,12 @@ export function ProfilesPanel({ onError }: ProfilesPanelProps) {
                       type="button"
                       variant="outline"
                       size="xs"
+                      disabled={uploadingProfileId === profile.id}
                       onClick={() => handleAddDocuments(profile.id)}
                     >
-                      Add document(s)
+                      {uploadingProfileId === profile.id
+                        ? 'Uploading…'
+                        : 'Add document(s)'}
                     </Button>
                     <Button
                       type="button"
@@ -362,6 +420,40 @@ export function ProfilesPanel({ onError }: ProfilesPanelProps) {
             No profiles yet.
           </p>
         )}
+
+        <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            Selected profile documents
+          </p>
+          {!selectedProfileId ? (
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Select a profile to view documents.
+            </p>
+          ) : null}
+          {documentsLoading ? (
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>
+          ) : null}
+          {!documentsLoading && selectedProfileId && documents.length === 0 ? (
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              No documents yet.
+            </p>
+          ) : null}
+          {!documentsLoading && documents.length > 0 ? (
+            <ul className="space-y-1">
+              {documents.map((doc) => (
+                <li
+                  key={doc.id}
+                  className="rounded-md border border-zinc-200 px-2 py-1 text-sm dark:border-zinc-700"
+                >
+                  <p className="truncate font-medium">{doc.file_name}</p>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                    {doc.mime_type} · {formatBytes(doc.byte_size)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
 
         <div className="space-y-3 pt-1">
           {!showAddForm ? (

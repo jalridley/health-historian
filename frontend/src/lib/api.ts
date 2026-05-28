@@ -18,6 +18,15 @@ export type ProfilePublic = {
   created_at: string;
 };
 
+export type DocumentPublic = {
+  id: string;
+  profile_id: string;
+  file_name: string;
+  mime_type: string;
+  byte_size: number;
+  created_at: string;
+};
+
 type ProfileUpdatePayload = {
   display_name: string;
 };
@@ -148,6 +157,36 @@ export async function deleteProfile(
   await profileRequest<void>(accessToken, `/profiles/${profileId}`, {
     method: 'DELETE',
   });
+}
+
+export async function listDocuments(
+  accessToken: string,
+  profileId: string,
+): Promise<DocumentPublic[]> {
+  return profileRequest<DocumentPublic[]>(
+    accessToken,
+    `/profiles/${profileId}/documents`,
+    {
+      method: 'GET',
+    },
+  );
+}
+
+export async function uploadProfileDocument(
+  accessToken: string,
+  profileId: string,
+  file: File,
+): Promise<DocumentPublic> {
+  const body = new FormData();
+  body.append('file', file);
+  return profileRequest<DocumentPublic>(
+    accessToken,
+    `/profiles/${profileId}/documents/upload`,
+    {
+      method: 'POST',
+      body,
+    },
+  );
 }
 
 /** Ensure a self profile exists; returns the user's profiles (one GET, optional POST). */
