@@ -9,12 +9,14 @@ from app.models.user import _utc_now
 
 class Profile(SQLModel, table=True):
     __tablename__ = "profiles"
+    # Partial unique index: only rows with is_self=True must be unique per owner_user_id. one user can have many profiles, but only one of those can be their self profile.
     __table_args__ = (
         Index(
             "ix_profiles_owner_user_id_is_self",
             "owner_user_id",
             unique=True,
             postgresql_where=text("is_self IS TRUE"),
+            sqlite_where=text("is_self IS TRUE"),
         ),
     )
 

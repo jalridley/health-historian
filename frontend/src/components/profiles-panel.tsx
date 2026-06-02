@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/field';
 import {
   createProfile,
+  deleteProfileDocument,
   deleteProfile,
   ensureSelfProfile,
   listDocuments,
@@ -91,6 +92,9 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
   const [documents, setDocuments] = useState<DocumentPublic[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [uploadingProfileId, setUploadingProfileId] = useState<string | null>(
+    null,
+  );
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(
     null,
   );
   const {
@@ -303,6 +307,24 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
     }
   };
 
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!selectedProfileId) {
+      return;
+    }
+
+    setDeletingDocumentId(documentId);
+    try {
+      const accessToken = await requireAccessToken();
+      await deleteProfileDocument(accessToken, selectedProfileId, documentId);
+      const docs = await listDocuments(accessToken, selectedProfileId);
+      setDocuments(docs);
+    } catch (err) {
+      reportError(err, 'Could not delete document.');
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  };
+
   if (loading) {
     return (
       <Card>
@@ -448,10 +470,23 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
                   key={doc.id}
                   className="rounded-md border border-zinc-200 px-2 py-1 text-sm dark:border-zinc-700"
                 >
-                  <p className="truncate font-medium">{doc.file_name}</p>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                    {doc.mime_type} · {formatBytes(doc.byte_size)}
-                  </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{doc.file_name}</p>
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                        {doc.mime_type} · {formatBytes(doc.byte_size)}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      disabled={deletingDocumentId === doc.id}
+                      onClick={() => void handleDeleteDocument(doc.id)}
+                    >
+                      {deletingDocumentId === doc.id ? 'Deleting…' : 'Delete'}
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>

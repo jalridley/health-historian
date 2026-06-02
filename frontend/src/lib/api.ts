@@ -189,6 +189,20 @@ export async function uploadProfileDocument(
   );
 }
 
+export async function deleteProfileDocument(
+  accessToken: string,
+  profileId: string,
+  documentId: string,
+): Promise<void> {
+  await profileRequest<void>(
+    accessToken,
+    `/profiles/${profileId}/documents/${documentId}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
 /** Ensure a self profile exists; returns the user's profiles (one GET, optional POST). */
 export async function ensureSelfProfile(
   session: Session,

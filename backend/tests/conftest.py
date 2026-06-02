@@ -12,17 +12,19 @@ from sqlmodel import Session, SQLModel, create_engine
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SUPABASE_JWKS_URL"] = "https://127.0.0.1:9/jwks.json"
 os.environ["SUPABASE_JWT_ISSUER"] = "https://example.invalid/auth/v1"
+os.environ["GCP_PROJECT_ID"] = "test-project"
+os.environ["GCS_BUCKET_NAME"] = "test-bucket"
 
 from app import auth
 from app.auth import CurrentUser, get_current_user
 from app.db import session as db_session_module
 from app.db.session import get_session
 from app.main import app
-from app.models import Profile, User  # noqa: F401
+from app.models import Document, Profile, User  # noqa: F401
 
 TEST_AUTH_USER_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 
-_APP_TABLES = [User.__table__, Profile.__table__]
+_APP_TABLES = [User.__table__, Profile.__table__, Document.__table__]
 
 
 @pytest.fixture(autouse=True)

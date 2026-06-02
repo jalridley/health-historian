@@ -15,5 +15,9 @@ class Settings(BaseSettings):
     SUPABASE_JWKS_URL: str
     SUPABASE_JWT_ISSUER: str
 
+    GCP_PROJECT_ID: str
+    GCS_BUCKET_NAME: str
+    GOOGLE_APPLICATION_CREDENTIALS: str | None = None
+
 
 settings = Settings()

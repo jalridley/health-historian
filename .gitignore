@@ -22,6 +22,7 @@ npm-debug.log*
 .env
 .env.*
 !.env.example
+backend/secrets/
 
 # IDE
 .idea/

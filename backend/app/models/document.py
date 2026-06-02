@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, Index
 from sqlmodel import Field, SQLModel
 
 from app.models.user import _utc_now
@@ -9,6 +9,16 @@ from app.models.user import _utc_now
 
 class Document(SQLModel, table=True):
     __tablename__ = "documents"
+    __table_args__ = (
+        # Enforce "same profile + same file checksum" uniqueness at DB level.
+        # This is the final safeguard against duplicates, including race conditions.
+        Index(
+            "ix_documents_profile_id_checksum_unique",
+            "profile_id",
+            "checksum",
+            unique=True,
+        ),
+    )
 
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
     profile_id: uuid.UUID = Field(foreign_key="profiles.id", index=True)
