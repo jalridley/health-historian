@@ -32,6 +32,11 @@ def _document_url(profile_id: str, document_id: str) -> str:
     return f"/profiles/{profile_id}/documents/{document_id}"
 
 
+def _access_url(profile_id: str, document_id: str, download: bool = False) -> str:
+    suffix = "?download=true" if download else ""
+    return f"/profiles/{profile_id}/documents/{document_id}/access-url{suffix}"
+
+
 def test_upload_document_without_auth_returns_401(anonymous_client):
     profile_id = "22222222-2222-2222-2222-222222222222"
     response = anonymous_client.post(
@@ -256,3 +261,73 @@ def test_delete_document_storage_failure_returns_503(
         select(Document).where(Document.id == uuid.UUID(document_id))
     ).first()
     assert still_there is not None
+
+
+@patch("app.api.routes.documents.signed_url_by_gs_uri")
+@patch("app.api.routes.documents.upload_profile_pdf")
+def test_get_document_access_url_returns_200(mock_upload, mock_signed_url, client):
+    mock_upload.return_value = "gs://test-bucket/profiles/test/doc/lab.pdf"
+    mock_signed_url.return_value = "https://example.test/signed"
+    profile_id = _create_owned_profile(client)
+    upload = client.post(
+        _upload_url(profile_id),
+        files={"file": ("lab.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert upload.status_code == 201
+    document_id = upload.json()["id"]
+
+    response = client.get(_access_url(profile_id, document_id))
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://example.test/signed"
+    mock_signed_url.assert_called_once()
+
+
+@patch("app.api.routes.documents.signed_url_by_gs_uri")
+@patch("app.api.routes.documents.upload_profile_pdf")
+def test_get_document_access_url_download_mode(mock_upload, mock_signed_url, client):
+    mock_upload.return_value = "gs://test-bucket/profiles/test/doc/lab.pdf"
+    mock_signed_url.return_value = "https://example.test/signed-download"
+    profile_id = _create_owned_profile(client)
+    upload = client.post(
+        _upload_url(profile_id),
+        files={"file": ("lab.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert upload.status_code == 201
+    document_id = upload.json()["id"]
+
+    response = client.get(_access_url(profile_id, document_id, download=True))
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://example.test/signed-download"
+    _, kwargs = mock_signed_url.call_args
+    assert kwargs["as_download"] is True
+
+
+@patch("app.api.routes.documents.signed_url_by_gs_uri")
+def test_get_document_access_url_not_found_returns_404(mock_signed_url, client):
+    profile_id = _create_owned_profile(client)
+    response = client.get(
+        _access_url(profile_id, "22222222-2222-2222-2222-222222222222")
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Document not found."
+    mock_signed_url.assert_not_called()
+
+
+@patch("app.api.routes.documents.signed_url_by_gs_uri")
+@patch("app.api.routes.documents.upload_profile_pdf")
+def test_get_document_access_url_storage_failure_returns_503(
+    mock_upload, mock_signed_url, client
+):
+    mock_upload.return_value = "gs://test-bucket/profiles/test/doc/lab.pdf"
+    mock_signed_url.side_effect = RuntimeError("sign error")
+    profile_id = _create_owned_profile(client)
+    upload = client.post(
+        _upload_url(profile_id),
+        files={"file": ("lab.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert upload.status_code == 201
+    document_id = upload.json()["id"]
+
+    response = client.get(_access_url(profile_id, document_id))
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Could not prepare document access URL."

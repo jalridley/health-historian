@@ -27,6 +27,10 @@ export type DocumentPublic = {
   created_at: string;
 };
 
+export type DocumentAccessUrl = {
+  url: string;
+};
+
 type ProfileUpdatePayload = {
   display_name: string;
 };
@@ -199,6 +203,22 @@ export async function deleteProfileDocument(
     `/profiles/${profileId}/documents/${documentId}`,
     {
       method: 'DELETE',
+    },
+  );
+}
+
+export async function getProfileDocumentAccessUrl(
+  accessToken: string,
+  profileId: string,
+  documentId: string,
+  download = false,
+): Promise<DocumentAccessUrl> {
+  const query = download ? '?download=true' : '';
+  return profileRequest<DocumentAccessUrl>(
+    accessToken,
+    `/profiles/${profileId}/documents/${documentId}/access-url${query}`,
+    {
+      method: 'GET',
     },
   );
 }

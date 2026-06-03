@@ -10,8 +10,8 @@ from app.api.deps import get_owned_profile
 from app.db.session import get_session
 from app.models.document import Document
 from app.models.profile import Profile
-from app.schemas.document import DocumentPublic
-from app.services.gcs import delete_blob_by_gs_uri, upload_profile_pdf
+from app.schemas.document import DocumentAccessUrl, DocumentPublic
+from app.services.gcs import delete_blob_by_gs_uri, signed_url_by_gs_uri, upload_profile_pdf
 
 router = APIRouter(
     prefix="/profiles/{profile_id}/documents",
@@ -167,3 +167,44 @@ def delete_document(
 
     session.delete(document)
     session.commit()
+
+
+@router.get("/{document_id}/access-url", response_model=DocumentAccessUrl)
+def get_document_access_url(
+    document_id: uuid.UUID,
+    profile: Annotated[Profile, Depends(get_owned_profile)],
+    session: Annotated[Session, Depends(get_session)],
+    download: bool = False,
+) -> DocumentAccessUrl:
+    document = session.exec(
+        select(Document).where(
+            Document.id == document_id,
+            Document.profile_id == profile.id,
+        )
+    ).first()
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    if not document.gcs_uri:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Document has no storage URI.",
+        )
+
+    try:
+        # One endpoint for both "view" and "download" behavior.
+        url = signed_url_by_gs_uri(
+            document.gcs_uri,
+            as_download=download,
+            file_name=document.file_name,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not prepare document access URL.",
+        ) from exc
+
+    return DocumentAccessUrl(url=url)

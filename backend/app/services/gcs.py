@@ -1,4 +1,5 @@
 from pathlib import PurePosixPath
+from datetime import timedelta
 from uuid import UUID
 
 from google.cloud import storage
@@ -58,6 +59,7 @@ def upload_profile_pdf(
     return f"gs://{settings.GCS_BUCKET_NAME}/{object_name}"
 
 
+# Delete one file in our bucket using its gs://... path from the database.
 def delete_blob_by_gs_uri(gs_uri: str) -> None:
     expected_prefix = f"gs://{settings.GCS_BUCKET_NAME}/"
     if not gs_uri.startswith(expected_prefix):
@@ -71,3 +73,37 @@ def delete_blob_by_gs_uri(gs_uri: str) -> None:
     bucket = client.bucket(settings.GCS_BUCKET_NAME)
     blob = bucket.blob(object_name)
     blob.delete()
+
+
+# Build a short-lived URL so private files can be viewed/downloaded safely.
+def signed_url_by_gs_uri(
+    gs_uri: str,
+    *,
+    ttl_seconds: int = 900,
+    as_download: bool = False,
+    file_name: str | None = None,
+) -> str:
+    expected_prefix = f"gs://{settings.GCS_BUCKET_NAME}/"
+    if not gs_uri.startswith(expected_prefix):
+        raise ValueError("Unsupported GCS URI.")
+
+    object_name = gs_uri.removeprefix(expected_prefix)
+    if not object_name:
+        raise ValueError("Missing object name in GCS URI.")
+
+    client = _get_storage_client()
+    bucket = client.bucket(settings.GCS_BUCKET_NAME)
+    blob = bucket.blob(object_name)
+
+    disposition = "inline"
+    if as_download:
+        # Hint browsers/mobile viewers to download instead of preview.
+        export_name = _safe_file_name(file_name or PurePosixPath(object_name).name)
+        disposition = f'attachment; filename="{export_name}"'
+
+    return blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(seconds=ttl_seconds),
+        method="GET",
+        response_disposition=disposition,
+    )

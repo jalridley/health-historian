@@ -23,6 +23,7 @@ import {
   deleteProfileDocument,
   deleteProfile,
   ensureSelfProfile,
+  getProfileDocumentAccessUrl,
   listDocuments,
   listProfiles,
   readStoredSelectedProfileId,
@@ -95,6 +96,9 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
     null,
   );
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(
+    null,
+  );
+  const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(
     null,
   );
   const {
@@ -187,7 +191,9 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
     fileInputRef.current?.click();
   };
 
-  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFilesSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const files = e.target.files;
     const profileId = addDocProfileRef.current;
     if (!files || files.length === 0 || !profileId) {
@@ -307,6 +313,7 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
     }
   };
 
+  // TODO: confirm dialog before delete
   const handleDeleteDocument = async (documentId: string) => {
     if (!selectedProfileId) {
       return;
@@ -322,6 +329,30 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
       reportError(err, 'Could not delete document.');
     } finally {
       setDeletingDocumentId(null);
+    }
+  };
+
+  const handleOpenDocument = async (doc: DocumentPublic, download: boolean) => {
+    if (!selectedProfileId) {
+      return;
+    }
+
+    setOpeningDocumentId(doc.id);
+    try {
+      const accessToken = await requireAccessToken();
+      const { url } = await getProfileDocumentAccessUrl(
+        accessToken,
+        selectedProfileId,
+        doc.id,
+        download,
+      );
+
+      // Web behavior: open signed URL in a new tab.
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      reportError(err, `Could not ${download ? 'download' : 'open'} document.`);
+    } finally {
+      setOpeningDocumentId(null);
     }
   };
 
@@ -374,7 +405,10 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
                         <Input
                           autoFocus
                           aria-invalid={!!renameErrors.display_name}
-                          {...registerRename('display_name', DISPLAY_NAME_RULES)}
+                          {...registerRename(
+                            'display_name',
+                            DISPLAY_NAME_RULES,
+                          )}
                         />
                       </FieldContent>
                       <FieldError errors={[renameErrors.display_name]} />
@@ -424,6 +458,7 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
                     >
                       rename
                     </Button>
+                    {/* TODO: confirm dialog before delete */}
                     {!profile.is_self ? (
                       <Button
                         type="button"
@@ -477,6 +512,24 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
                         {doc.mime_type} · {formatBytes(doc.byte_size)}
                       </p>
                     </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      disabled={openingDocumentId === doc.id}
+                      onClick={() => void handleOpenDocument(doc, false)}
+                    >
+                      {openingDocumentId === doc.id ? 'Opening…' : 'View'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      disabled={openingDocumentId === doc.id}
+                      onClick={() => void handleOpenDocument(doc, true)}
+                    >
+                      {openingDocumentId === doc.id ? 'Opening…' : 'Download'}
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
