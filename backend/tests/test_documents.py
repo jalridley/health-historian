@@ -6,6 +6,7 @@ from sqlmodel import select
 from app.models.document import Document
 from app.models.profile import Profile
 from app.models.user import User
+from app.services.gcs import GcsObjectNotFoundError, GcsStorageUnavailableError
 
 PDF_BYTES = b"%PDF-1.4 test content"
 MAX_FILE_SIZE = 20 * 1024 * 1024
@@ -243,7 +244,7 @@ def test_delete_document_storage_failure_returns_503(
     mock_upload, mock_delete_blob, client, db_session
 ):
     mock_upload.return_value = "gs://test-bucket/profiles/test/doc/test.pdf"
-    mock_delete_blob.side_effect = RuntimeError("gcs down")
+    mock_delete_blob.side_effect = GcsStorageUnavailableError("gcs down")
     profile_id = _create_owned_profile(client)
 
     upload = client.post(
@@ -255,7 +256,7 @@ def test_delete_document_storage_failure_returns_503(
 
     response = client.delete(_document_url(profile_id, document_id))
     assert response.status_code == 503
-    assert response.json()["detail"] == "Could not delete document from storage."
+    assert "Please try again" in response.json()["detail"]
 
     still_there = db_session.exec(
         select(Document).where(Document.id == uuid.UUID(document_id))
@@ -319,7 +320,7 @@ def test_get_document_access_url_storage_failure_returns_503(
     mock_upload, mock_signed_url, client
 ):
     mock_upload.return_value = "gs://test-bucket/profiles/test/doc/lab.pdf"
-    mock_signed_url.side_effect = RuntimeError("sign error")
+    mock_signed_url.side_effect = GcsStorageUnavailableError("sign error")
     profile_id = _create_owned_profile(client)
     upload = client.post(
         _upload_url(profile_id),
@@ -330,4 +331,62 @@ def test_get_document_access_url_storage_failure_returns_503(
 
     response = client.get(_access_url(profile_id, document_id))
     assert response.status_code == 503
-    assert response.json()["detail"] == "Could not prepare document access URL."
+    assert "Please try again" in response.json()["detail"]
+
+
+@patch("app.api.routes.documents.delete_blob_by_gs_uri")
+@patch("app.api.routes.documents.upload_profile_pdf")
+def test_delete_document_storage_not_found_still_returns_204(
+    mock_upload, mock_delete_blob, client, db_session
+):
+    mock_upload.return_value = "gs://test-bucket/profiles/test/doc/lab.pdf"
+    mock_delete_blob.side_effect = GcsObjectNotFoundError("already deleted")
+    profile_id = _create_owned_profile(client)
+
+    upload = client.post(
+        _upload_url(profile_id),
+        files={"file": ("lab.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert upload.status_code == 201
+    document_id = upload.json()["id"]
+
+    response = client.delete(_document_url(profile_id, document_id))
+    assert response.status_code == 204
+
+    remaining = db_session.exec(
+        select(Document).where(Document.id == uuid.UUID(document_id))
+    ).first()
+    assert remaining is None
+
+
+@patch("app.api.routes.documents.signed_url_by_gs_uri")
+@patch("app.api.routes.documents.upload_profile_pdf")
+def test_get_document_access_url_storage_not_found_returns_404(
+    mock_upload, mock_signed_url, client
+):
+    mock_upload.return_value = "gs://test-bucket/profiles/test/doc/lab.pdf"
+    mock_signed_url.side_effect = GcsObjectNotFoundError("missing object")
+    profile_id = _create_owned_profile(client)
+    upload = client.post(
+        _upload_url(profile_id),
+        files={"file": ("lab.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert upload.status_code == 201
+    document_id = upload.json()["id"]
+
+    response = client.get(_access_url(profile_id, document_id))
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Document file not found in storage."
+
+
+@patch("app.api.routes.documents.upload_profile_pdf")
+def test_upload_document_storage_unavailable_returns_503(mock_upload, client):
+    mock_upload.side_effect = GcsStorageUnavailableError("temporary outage")
+    profile_id = _create_owned_profile(client)
+
+    response = client.post(
+        _upload_url(profile_id),
+        files={"file": ("lab.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert response.status_code == 503
+    assert "Please try again" in response.json()["detail"]

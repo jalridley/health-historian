@@ -11,7 +11,13 @@ from app.db.session import get_session
 from app.models.document import Document
 from app.models.profile import Profile
 from app.schemas.document import DocumentAccessUrl, DocumentPublic
-from app.services.gcs import delete_blob_by_gs_uri, signed_url_by_gs_uri, upload_profile_pdf
+from app.services.gcs import (
+    GcsObjectNotFoundError,
+    GcsStorageUnavailableError,
+    delete_blob_by_gs_uri,
+    signed_url_by_gs_uri,
+    upload_profile_pdf,
+)
 
 router = APIRouter(
     prefix="/profiles/{profile_id}/documents",
@@ -20,6 +26,35 @@ router = APIRouter(
 
 ALLOWED_MIME_TYPES = {"application/pdf"}
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+
+
+def _raise_http_for_gcs_error(
+    exc: Exception,
+    *,
+    not_found_detail: str,
+    unavailable_detail: str,
+    invalid_reference_detail: str = "Invalid document storage reference.",
+) -> None:
+    # Map storage-layer errors to clear API responses for the frontend.
+    if isinstance(exc, GcsObjectNotFoundError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=not_found_detail,
+        ) from exc
+    if isinstance(exc, GcsStorageUnavailableError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=unavailable_detail,
+        ) from exc
+    if isinstance(exc, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=invalid_reference_detail,
+        ) from exc
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=unavailable_detail,
+    ) from exc
 
 
 def _document_to_public(doc: Document) -> DocumentPublic:
@@ -99,10 +134,11 @@ async def upload_document(
             mime_type=mime_type,
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not store document.",
-        ) from exc
+        _raise_http_for_gcs_error(
+            exc,
+            not_found_detail="Document file not found in storage.",
+            unavailable_detail="Could not store document. Please try again.",
+        )
 
     document = Document(
         id=document_id,
@@ -159,11 +195,15 @@ def delete_document(
 
     try:
         delete_blob_by_gs_uri(document.gcs_uri)
+    except GcsObjectNotFoundError:
+        # File already gone in bucket; still remove the DB row so UI stays in sync.
+        pass
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not delete document from storage.",
-        ) from exc
+        _raise_http_for_gcs_error(
+            exc,
+            not_found_detail="Document file not found in storage.",
+            unavailable_detail="Could not delete document from storage. Please try again.",
+        )
 
     session.delete(document)
     session.commit()
@@ -202,9 +242,10 @@ def get_document_access_url(
             file_name=document.file_name,
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not prepare document access URL.",
-        ) from exc
+        _raise_http_for_gcs_error(
+            exc,
+            not_found_detail="Document file not found in storage.",
+            unavailable_detail="Could not prepare document access URL. Please try again.",
+        )
 
     return DocumentAccessUrl(url=url)

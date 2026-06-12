@@ -1,14 +1,24 @@
-from pathlib import PurePosixPath
 from datetime import timedelta
+from pathlib import PurePosixPath
 from uuid import UUID
 
+from google.api_core import exceptions as google_api_exceptions
 from google.cloud import storage
+from google.cloud.exceptions import NotFound
 from google.oauth2 import service_account
 
 from app.core.config import settings
 
 # Create the Google client once and reuse it for every upload.
 _storage_client: storage.Client | None = None
+
+
+class GcsObjectNotFoundError(Exception):
+    """Raised when the object is missing from our bucket."""
+
+
+class GcsStorageUnavailableError(Exception):
+    """Raised for temporary Google Cloud/network failures (safe to retry later)."""
 
 
 def _get_storage_client() -> storage.Client:
@@ -39,6 +49,36 @@ def _safe_file_name(file_name: str) -> str:
     return name or "unnamed.pdf"
 
 
+def _object_name_from_gs_uri(gs_uri: str) -> str:
+    expected_prefix = f"gs://{settings.GCS_BUCKET_NAME}/"
+    if not gs_uri.startswith(expected_prefix):
+        raise ValueError("Unsupported GCS URI.")
+
+    object_name = gs_uri.removeprefix(expected_prefix)
+    if not object_name:
+        raise ValueError("Missing object name in GCS URI.")
+    return object_name
+
+
+def _reraise_storage_error(exc: Exception) -> None:
+    # Turn low-level Google errors into a small set our API routes can understand.
+    if isinstance(exc, NotFound):
+        raise GcsObjectNotFoundError("Object not found in storage.") from exc
+    if isinstance(
+        exc,
+        (
+            google_api_exceptions.ServiceUnavailable,
+            google_api_exceptions.InternalServerError,
+            google_api_exceptions.DeadlineExceeded,
+            google_api_exceptions.TooManyRequests,
+        ),
+    ):
+        raise GcsStorageUnavailableError("Temporary storage service issue.") from exc
+    if isinstance(exc, google_api_exceptions.GoogleAPIError):
+        raise GcsStorageUnavailableError("Storage request failed.") from exc
+    raise GcsStorageUnavailableError("Unexpected storage error.") from exc
+
+
 def upload_profile_pdf(
     *,
     profile_id: UUID,
@@ -53,26 +93,25 @@ def upload_profile_pdf(
     client = _get_storage_client()
     bucket = client.bucket(settings.GCS_BUCKET_NAME)
     blob = bucket.blob(object_name)
-    # Send the PDF bytes to Google Cloud Storage.
-    blob.upload_from_string(contents, content_type=mime_type)
+    try:
+        # Send the PDF bytes to Google Cloud Storage.
+        blob.upload_from_string(contents, content_type=mime_type)
+    except Exception as exc:
+        _reraise_storage_error(exc)
     # Return the full address so we can save it in the database.
     return f"gs://{settings.GCS_BUCKET_NAME}/{object_name}"
 
 
 # Delete one file in our bucket using its gs://... path from the database.
 def delete_blob_by_gs_uri(gs_uri: str) -> None:
-    expected_prefix = f"gs://{settings.GCS_BUCKET_NAME}/"
-    if not gs_uri.startswith(expected_prefix):
-        raise ValueError("Unsupported GCS URI.")
-
-    object_name = gs_uri.removeprefix(expected_prefix)
-    if not object_name:
-        raise ValueError("Missing object name in GCS URI.")
-
+    object_name = _object_name_from_gs_uri(gs_uri)
     client = _get_storage_client()
     bucket = client.bucket(settings.GCS_BUCKET_NAME)
     blob = bucket.blob(object_name)
-    blob.delete()
+    try:
+        blob.delete()
+    except Exception as exc:
+        _reraise_storage_error(exc)
 
 
 # Build a short-lived URL so private files can be viewed/downloaded safely.
@@ -83,14 +122,7 @@ def signed_url_by_gs_uri(
     as_download: bool = False,
     file_name: str | None = None,
 ) -> str:
-    expected_prefix = f"gs://{settings.GCS_BUCKET_NAME}/"
-    if not gs_uri.startswith(expected_prefix):
-        raise ValueError("Unsupported GCS URI.")
-
-    object_name = gs_uri.removeprefix(expected_prefix)
-    if not object_name:
-        raise ValueError("Missing object name in GCS URI.")
-
+    object_name = _object_name_from_gs_uri(gs_uri)
     client = _get_storage_client()
     bucket = client.bucket(settings.GCS_BUCKET_NAME)
     blob = bucket.blob(object_name)
@@ -101,9 +133,12 @@ def signed_url_by_gs_uri(
         export_name = _safe_file_name(file_name or PurePosixPath(object_name).name)
         disposition = f'attachment; filename="{export_name}"'
 
-    return blob.generate_signed_url(
-        version="v4",
-        expiration=timedelta(seconds=ttl_seconds),
-        method="GET",
-        response_disposition=disposition,
-    )
+    try:
+        return blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(seconds=ttl_seconds),
+            method="GET",
+            response_disposition=disposition,
+        )
+    except Exception as exc:
+        _reraise_storage_error(exc)
