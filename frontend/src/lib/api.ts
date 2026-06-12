@@ -49,8 +49,17 @@ async function profileRequest<T>(
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed (${response.status}).`);
+    const body = await response.text();
+    let message = body || `Request failed (${response.status}).`;
+    try {
+      const parsed = JSON.parse(body) as { detail?: string };
+      if (typeof parsed.detail === 'string') {
+        message = parsed.detail;
+      }
+    } catch {
+      // Keep raw body when response is not JSON.
+    }
+    throw new Error(message);
   }
 
   if (response.status === 204) {
@@ -182,7 +191,7 @@ export async function uploadProfileDocument(
   file: File,
 ): Promise<DocumentPublic> {
   const body = new FormData();
-  body.append('file', file);
+  body.append('file', file, file.name);
   return profileRequest<DocumentPublic>(
     accessToken,
     `/profiles/${profileId}/documents/upload`,

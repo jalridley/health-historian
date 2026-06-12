@@ -194,19 +194,36 @@ export const ProfilesPanel = ({ onError }: ProfilesPanelProps) => {
   const handleFilesSelected = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const files = e.target.files;
     const profileId = addDocProfileRef.current;
-    if (!files || files.length === 0 || !profileId) {
+    // Snapshot chosen files before any await. e.target.files is a live FileList tied to
+    // the <input>: clearing the input (see finally below) or DOM updates can empty or
+    // change it while uploads run. Copy into a plain array now so the loop below always
+    // sees what the user picked. Use Array.from — FileList is array-like, not a real
+    // array, so .map() and other array methods are not available on it.
+    const filesToUpload = Array.from(e.target.files ?? []);
+    if (filesToUpload.length === 0 || !profileId) {
       return;
     }
     setUploadingProfileId(profileId);
     try {
       const accessToken = await requireAccessToken();
-      for (const file of Array.from(files)) {
-        await uploadProfileDocument(accessToken, profileId, file);
+      const failures: string[] = [];
+      for (const file of filesToUpload) {
+        try {
+          await uploadProfileDocument(accessToken, profileId, file);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : 'Upload failed.';
+          failures.push(`${file.name}: ${detail}`);
+        }
       }
       const docs = await listDocuments(accessToken, profileId);
       setDocuments(docs);
+      if (failures.length > 0) {
+        reportError(
+          new Error(failures.join(' ')),
+          'Some document(s) could not be uploaded.',
+        );
+      }
     } catch (err) {
       reportError(err, 'Could not upload document(s).');
     } finally {

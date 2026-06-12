@@ -118,7 +118,10 @@ async def upload_document(
     if duplicate is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This file already exists for this profile.",
+            detail=(
+                "A document with the same contents already exists for this profile. "
+                "Duplicate detection uses file contents, not the filename."
+            ),
         )
 
     file_name = file.filename or "unnamed.pdf"
@@ -163,7 +166,10 @@ async def upload_document(
             pass
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This file already exists for this profile.",
+            detail=(
+                "A document with the same contents already exists for this profile. "
+                "Duplicate detection uses file contents, not the filename."
+            ),
         ) from exc
     session.refresh(document)
     return _document_to_public(document)

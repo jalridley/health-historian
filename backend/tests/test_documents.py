@@ -9,6 +9,7 @@ from app.models.user import User
 from app.services.gcs import GcsObjectNotFoundError, GcsStorageUnavailableError
 
 PDF_BYTES = b"%PDF-1.4 test content"
+PDF_BYTES_OTHER = b"%PDF-1.4 different test content for multi-upload"
 MAX_FILE_SIZE = 20 * 1024 * 1024
 
 
@@ -119,6 +120,31 @@ def test_upload_document_success_returns_201(mock_upload, client, db_session):
 
 
 @patch("app.api.routes.documents.upload_profile_pdf")
+def test_upload_two_different_documents_sequentially(mock_upload, client):
+    mock_upload.side_effect = [
+        "gs://test-bucket/profiles/test/doc/a.pdf",
+        "gs://test-bucket/profiles/test/doc/b.pdf",
+    ]
+    profile_id = _create_owned_profile(client)
+
+    first = client.post(
+        _upload_url(profile_id),
+        files={"file": ("report-a.pdf", PDF_BYTES, "application/pdf")},
+    )
+    second = client.post(
+        _upload_url(profile_id),
+        files={"file": ("report-b.pdf", PDF_BYTES_OTHER, "application/pdf")},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    response = client.get(_list_url(profile_id))
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert mock_upload.call_count == 2
+
+
+@patch("app.api.routes.documents.upload_profile_pdf")
 def test_upload_duplicate_document_same_profile_returns_409(mock_upload, client):
     mock_upload.return_value = "gs://test-bucket/profiles/test/doc/test.pdf"
     profile_id = _create_owned_profile(client)
@@ -133,7 +159,7 @@ def test_upload_duplicate_document_same_profile_returns_409(mock_upload, client)
     )
     assert first.status_code == 201
     assert second.status_code == 409
-    assert second.json()["detail"] == "This file already exists for this profile."
+    assert "same contents" in second.json()["detail"]
     # Duplicate is blocked before any second storage upload.
     assert mock_upload.call_count == 1
 
