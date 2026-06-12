@@ -72,7 +72,7 @@ export default function CreateAccountPage() {
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
-        router.replace('/');
+        router.replace('/profiles');
       }
     });
   }, [router]);
@@ -140,7 +140,7 @@ export default function CreateAccountPage() {
       return;
     }
 
-    router.replace('/');
+    router.replace('/profiles');
   };
 
   return (

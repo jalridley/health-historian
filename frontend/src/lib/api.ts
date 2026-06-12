@@ -96,6 +96,15 @@ export async function listProfiles(
   });
 }
 
+export async function getProfile(
+  accessToken: string,
+  profileId: string,
+): Promise<ProfilePublic> {
+  return profileRequest<ProfilePublic>(accessToken, `/profiles/${profileId}`, {
+    method: 'GET',
+  });
+}
+
 export function selfProfileFromList(
   profiles: ProfilePublic[],
 ): ProfilePublic | null {
@@ -111,33 +120,6 @@ export function sortProfilesForDisplay(
     .filter((profile) => !profile.is_self)
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
   return self ? [self, ...others] : others;
-}
-
-export function readStoredSelectedProfileId(): string | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  return localStorage.getItem(SELECTED_PROFILE_STORAGE_KEY);
-}
-
-export function writeStoredSelectedProfileId(profileId: string): void {
-  localStorage.setItem(SELECTED_PROFILE_STORAGE_KEY, profileId);
-}
-
-export function resolveSelectedProfile(
-  profiles: ProfilePublic[],
-  storedId: string | null,
-): ProfilePublic | null {
-  if (profiles.length === 0) {
-    return null;
-  }
-  if (storedId) {
-    const match = profiles.find((profile) => profile.id === storedId);
-    if (match) {
-      return match;
-    }
-  }
-  return selfProfileFromList(profiles) ?? profiles[0];
 }
 
 export async function createProfile(

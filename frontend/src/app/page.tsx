@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { SubmitHandler } from 'react-hook-form';
 import { useForm } from 'react-hook-form';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -19,7 +20,6 @@ import {
   FieldError,
   FieldLabel,
 } from '@/components/ui/field';
-import { ProfilesPanel } from '@/components/profiles-panel';
 import { clearStoredProfileSelection } from '@/lib/api';
 import { accountNameFromUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -32,6 +32,7 @@ type AuthFormValues = {
 };
 
 export default function HomePage() {
+  const router = useRouter();
   const [accountName, setAccountName] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,13 +48,17 @@ export default function HomePage() {
     },
   });
 
-  const loadSignedInState = async (
-    session: NonNullable<
-      Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']
-    >,
-  ) => {
-    setAccountName(accountNameFromUser(session.user));
-  };
+  const loadSignedInState = useCallback(
+    async (
+      session: NonNullable<
+        Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']
+      >,
+    ) => {
+      setAccountName(accountNameFromUser(session.user));
+      router.replace('/profiles');
+    },
+    [router],
+  );
 
   const clearSignedInState = () => {
     setAccountName(null);
@@ -87,7 +92,7 @@ export default function HomePage() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [loadSignedInState, router]);
 
   const handleSignIn: SubmitHandler<AuthFormValues> = async (values) => {
     setLoading(true);
@@ -106,21 +111,10 @@ export default function HomePage() {
 
     if (data.session) {
       await loadSignedInState(data.session);
+      setLoading(false);
+      return;
     }
 
-    setMessage('Log in successful.');
-    setLoading(false);
-  };
-
-  const handleSignOut = async () => {
-    setLoading(true);
-    setMessage(null);
-
-    const { error } = await supabase.auth.signOut();
-    clearStoredProfileSelection();
-    clearSignedInState();
-
-    setMessage(error ? error.message : 'Log out successful.');
     setLoading(false);
   };
 
@@ -128,33 +122,13 @@ export default function HomePage() {
     <div className="p-10">
       <header className="mb-4 flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">HealthHistorian</h1>
-        {accountName ? (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-zinc-700 dark:text-zinc-300">
-              {accountName}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSignOut}
-              disabled={loading}
-            >
-              Log out
-            </Button>
-          </div>
-        ) : null}
       </header>
 
       <div className="flex flex-col gap-4">
         {accountName ? (
-          <>
-            <ProfilesPanel onError={(detail) => setMessage(detail)} />
-            {message ? (
-              <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                {message}
-              </p>
-            ) : null}
-          </>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Redirecting to profiles…
+          </p>
         ) : null}
         {!accountName ? (
           <Card>
